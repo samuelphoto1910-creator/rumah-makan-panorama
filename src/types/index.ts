@@ -82,6 +82,10 @@ export interface FixedAsset {
   location: string;
   status: "active" | "maintenance" | "inactive";
   notes?: string;
+  vendor?: string;
+  invoiceNumber?: string;
+  paymentSource?: string;
+  recordedBy?: string;
 }
 
 export interface AssetMaintenance {

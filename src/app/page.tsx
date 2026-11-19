@@ -511,6 +511,15 @@ export default function Home() {
     const supabase = createClient();
     if (supabase) {
       try {
+        const combinedNotes = [
+          newAsset.notes,
+          newAsset.vendor ? `Toko: ${newAsset.vendor}` : null,
+          newAsset.invoiceNumber ? `No. Nota: ${newAsset.invoiceNumber}` : null,
+          newAsset.paymentSource ? `Sumber: ${newAsset.paymentSource}` : null,
+        ]
+          .filter(Boolean)
+          .join(" • ");
+
         await supabase.from("fixed_assets").insert({
           name: newAsset.name,
           category: newAsset.category,
@@ -519,7 +528,7 @@ export default function Home() {
           condition: newAsset.condition,
           location: newAsset.location,
           status: newAsset.status,
-          notes: newAsset.notes,
+          notes: combinedNotes || undefined,
         });
       } catch (err) {
         console.error("Gagal simpan aset baru ke Supabase:", err);
