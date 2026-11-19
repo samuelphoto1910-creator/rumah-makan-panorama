@@ -225,6 +225,49 @@ export default function Home() {
           }))
         );
       }
+
+      // 5. Fixed Assets
+      const { data: assetData } = await supabase
+        .from("fixed_assets")
+        .select("*")
+        .order("purchase_date", { ascending: false });
+
+      if (assetData && assetData.length > 0) {
+        setAssets(
+          assetData.map((a: Record<string, unknown>) => ({
+            id: String(a.id),
+            name: String(a.name),
+            category: String(a.category),
+            purchaseDate: String(a.purchase_date),
+            purchasePrice: a.purchase_price ? Number(a.purchase_price) : undefined,
+            condition: a.condition as FixedAsset["condition"],
+            location: String(a.location),
+            status: a.status as FixedAsset["status"],
+            notes: a.notes ? String(a.notes) : undefined,
+          }))
+        );
+      }
+
+      // 6. Asset Maintenance
+      const { data: mntData } = await supabase
+        .from("asset_maintenance")
+        .select("*")
+        .order("maintenance_date", { ascending: false });
+
+      if (mntData && mntData.length > 0) {
+        setMaintenances(
+          mntData.map((m: Record<string, unknown>) => ({
+            id: String(m.id),
+            assetId: String(m.asset_id),
+            assetName: String(m.asset_name),
+            maintenanceDate: String(m.maintenance_date),
+            maintenanceType: String(m.maintenance_type),
+            description: String(m.description),
+            cost: Number(m.cost),
+            notes: m.notes ? String(m.notes) : undefined,
+          }))
+        );
+      }
     } catch (e) {
       console.error("Gagal mengambil data dari Supabase:", e);
     }
@@ -420,9 +463,72 @@ export default function Home() {
     }
   };
 
-  // Handlers for Fixed Assets
-  const handleAddMaintenance = (newMnt: AssetMaintenance) => {
-    setMaintenances([newMnt, ...maintenances]);
+  // Handlers for Fixed Assets & Asset Masuk
+  const handleAddAsset = async (newAsset: FixedAsset, deductCashAccountId?: string) => {
+    setAssets((prev) => [newAsset, ...prev]);
+
+    // Jika dipotong dari kas resto, otomatis buat transaksi kas keluar (Buku Kas)
+    if (deductCashAccountId && (newAsset.purchasePrice || 0) > 0) {
+      const price = newAsset.purchasePrice || 0;
+      const targetAcc = cashAccounts.find((a) => a.id === deductCashAccountId);
+      const assetTx: CashTransaction = {
+        id: `tx-ast-${newAsset.id}`,
+        transactionDate: newAsset.purchaseDate,
+        cashAccountId: deductCashAccountId,
+        categoryId: "cat-exp-asset",
+        categoryName: "Pembelian / Perolehan Aset",
+        direction: "OUT",
+        amount: price,
+        description: `Beli aset masuk: ${newAsset.name} (${newAsset.category}) via ${targetAcc?.name || "Kas"}`,
+        sourceType: "MANUAL",
+        sourceId: newAsset.id,
+        createdBy: userRole,
+        createdAt: new Date().toISOString(),
+        status: "ACTIVE",
+      };
+      setTransactions((prev) => [assetTx, ...prev]);
+
+      const supabase = createClient();
+      if (supabase) {
+        try {
+          await supabase.from("cash_transactions").insert({
+            transaction_date: assetTx.transactionDate,
+            cash_account_id: assetTx.cashAccountId,
+            category_name: assetTx.categoryName,
+            direction: assetTx.direction,
+            amount: assetTx.amount,
+            description: assetTx.description,
+            source_type: assetTx.sourceType,
+            source_id: assetTx.sourceId,
+            created_by: assetTx.createdBy,
+          });
+        } catch (err) {
+          console.error("Gagal simpan transaksi kas beli aset ke Supabase:", err);
+        }
+      }
+    }
+
+    const supabase = createClient();
+    if (supabase) {
+      try {
+        await supabase.from("fixed_assets").insert({
+          name: newAsset.name,
+          category: newAsset.category,
+          purchase_date: newAsset.purchaseDate,
+          purchase_price: newAsset.purchasePrice,
+          condition: newAsset.condition,
+          location: newAsset.location,
+          status: newAsset.status,
+          notes: newAsset.notes,
+        });
+      } catch (err) {
+        console.error("Gagal simpan aset baru ke Supabase:", err);
+      }
+    }
+  };
+
+  const handleAddMaintenance = async (newMnt: AssetMaintenance) => {
+    setMaintenances((prev) => [newMnt, ...prev]);
 
     if (newMnt.cost > 0) {
       const maintenanceTx: CashTransaction = {
@@ -441,6 +547,42 @@ export default function Home() {
         status: "ACTIVE",
       };
       setTransactions((prev) => [maintenanceTx, ...prev]);
+
+      const supabase = createClient();
+      if (supabase) {
+        try {
+          await supabase.from("cash_transactions").insert({
+            transaction_date: maintenanceTx.transactionDate,
+            cash_account_id: maintenanceTx.cashAccountId,
+            category_name: maintenanceTx.categoryName,
+            direction: maintenanceTx.direction,
+            amount: maintenanceTx.amount,
+            description: maintenanceTx.description,
+            source_type: maintenanceTx.sourceType,
+            source_id: maintenanceTx.sourceId,
+            created_by: maintenanceTx.createdBy,
+          });
+        } catch (err) {
+          console.error("Gagal simpan transaksi servis aset ke Supabase:", err);
+        }
+      }
+    }
+
+    const supabase = createClient();
+    if (supabase) {
+      try {
+        await supabase.from("asset_maintenance").insert({
+          asset_id: newMnt.assetId,
+          asset_name: newMnt.assetName,
+          maintenance_date: newMnt.maintenanceDate,
+          maintenance_type: newMnt.maintenanceType,
+          description: newMnt.description,
+          cost: newMnt.cost,
+          notes: newMnt.notes,
+        });
+      } catch (err) {
+        console.error("Gagal simpan servis aset ke Supabase:", err);
+      }
     }
   };
 
@@ -553,6 +695,8 @@ export default function Home() {
             <AssetView
               assets={assets}
               maintenances={maintenances}
+              cashAccounts={cashAccounts}
+              onAddAsset={handleAddAsset}
               onAddMaintenance={handleAddMaintenance}
               userRole={userRole}
             />
