@@ -184,7 +184,7 @@ export default function Home() {
       // 1. Menus
       const { data: menuData, error: menuErr } = await supabase.from("menus").select("*");
       if (menuErr) console.error("Supabase menus error:", menuErr);
-      if (menuData && menuData.length > 0) {
+      if (!menuErr && menuData) {
         const parsed = menuData.map((m: Record<string, unknown>) => ({
           id: String(m.id),
           name: String(m.name),
@@ -229,7 +229,7 @@ export default function Home() {
         .select("*, daily_sale_items(*)")
         .order("business_date", { ascending: false });
       if (salesErr) console.error("Supabase daily_sales error:", salesErr);
-      if (salesData && salesData.length > 0) {
+      if (!salesErr && salesData) {
         const parsed = salesData.map((s: Record<string, unknown>) => ({
           id: String(s.id),
           businessDate: String(s.business_date),
@@ -268,7 +268,7 @@ export default function Home() {
         .select("*")
         .order("transaction_date", { ascending: false });
       if (txErr) console.error("Supabase cash_transactions error:", txErr);
-      if (txData && txData.length > 0) {
+      if (!txErr && txData) {
         const parsed = txData.map((t: Record<string, unknown>) => ({
           id: String(t.id),
           transactionDate: String(t.transaction_date),
@@ -295,7 +295,7 @@ export default function Home() {
         .select("*")
         .order("purchase_date", { ascending: false });
       if (assetErr) console.error("Supabase fixed_assets error:", assetErr);
-      if (assetData && assetData.length > 0) {
+      if (!assetErr && assetData) {
         const parsed = assetData.map((a: Record<string, unknown>) => ({
           id: String(a.id),
           name: String(a.name),
@@ -317,7 +317,7 @@ export default function Home() {
         .select("*")
         .order("maintenance_date", { ascending: false });
       if (mntErr) console.error("Supabase asset_maintenance error:", mntErr);
-      if (mntData && mntData.length > 0) {
+      if (!mntErr && mntData) {
         const parsed = mntData.map((m: Record<string, unknown>) => ({
           id: String(m.id),
           assetId: String(m.asset_id),
