@@ -254,6 +254,41 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 -- ------------------------------------------------------------------------------
+-- LANGKAH 6: GRANT HAK AKSES LENGKAP PADA TABEL SUPABASE (MENCEGAH ERROR 42501)
+-- ------------------------------------------------------------------------------
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+
+-- Kebijakan RLS dengan WITH CHECK (true) agar INSERT & UPDATE tidak pernah diblokir
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_transactions;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sales;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sale_items;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sale_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.menus;
+CREATE POLICY "Allow all for authenticated users" ON public.menus FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_accounts;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_accounts FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.fixed_assets;
+CREATE POLICY "Allow all for authenticated users" ON public.fixed_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.asset_maintenance;
+CREATE POLICY "Allow all for authenticated users" ON public.asset_maintenance FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.activity_logs;
+CREATE POLICY "Allow all for authenticated users" ON public.activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- ------------------------------------------------------------------------------
 -- VERIFIKASI AKUN YANG BERHASIL DIBUAT
 -- ------------------------------------------------------------------------------
 SELECT id, email, full_name, role FROM public.profiles ORDER BY role;

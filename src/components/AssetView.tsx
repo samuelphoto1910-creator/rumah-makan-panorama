@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FixedAsset, AssetMaintenance, CashAccount } from "../types";
+import { DEFAULT_CASH_ACCOUNT_IDS, sanitizeCashAccountId } from "../data/mockData";
 import { IconBox, IconPlus, IconArrowDownLeft, IconCheck } from "./icons";
 
 interface AssetViewProps {
@@ -39,7 +40,9 @@ export function AssetView({
   const [location, setLocation] = useState("Dapur Utama");
   const [notes, setNotes] = useState("");
   const [paymentSource, setPaymentSource] = useState<"CASH_ACCOUNT" | "OWNER_CAPITAL">("CASH_ACCOUNT");
-  const [selectedCashAccountId, setSelectedCashAccountId] = useState(cashAccounts[0]?.id || "acc-1");
+  const [selectedCashAccountId, setSelectedCashAccountId] = useState(
+    cashAccounts[0]?.id || DEFAULT_CASH_ACCOUNT_IDS.CASH
+  );
   const [isSubmittingAsset, setIsSubmittingAsset] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -51,6 +54,19 @@ export function AssetView({
   const [maintenanceDesc, setMaintenanceDesc] = useState("");
   const [maintenanceCost, setMaintenanceCost] = useState<number | "">("");
   const [maintenanceNotes, setMaintenanceNotes] = useState("");
+
+  // Sync cash accounts and assets if loaded asynchronously
+  useEffect(() => {
+    if (cashAccounts.length > 0 && (!selectedCashAccountId || selectedCashAccountId === "acc-1")) {
+      setSelectedCashAccountId(cashAccounts[0].id);
+    }
+  }, [cashAccounts, selectedCashAccountId]);
+
+  useEffect(() => {
+    if (assets.length > 0 && !selectedAssetId) {
+      setSelectedAssetId(assets[0].id);
+    }
+  }, [assets, selectedAssetId]);
 
   // Filter State untuk Daftar Inventaris
   const [filterCategory, setFilterCategory] = useState("ALL");
@@ -98,7 +114,7 @@ export function AssetView({
       notes: notes.trim() || undefined,
     };
 
-    const deductAccountId = paymentSource === "CASH_ACCOUNT" ? selectedCashAccountId : undefined;
+    const deductAccountId = paymentSource === "CASH_ACCOUNT" ? sanitizeCashAccountId(selectedCashAccountId) : undefined;
 
     await onAddAsset(newAsset, deductAccountId);
 

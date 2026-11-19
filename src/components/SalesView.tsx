@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { DailySale, DailySaleItem, MenuItem, RecordingMethod } from "../types";
+import { DEFAULT_CASH_ACCOUNT_IDS } from "../data/mockData";
 import { IconReceipt, IconPlus, IconTrash, IconCheck } from "./icons";
 
 interface SalesViewProps {
@@ -133,7 +134,7 @@ export function SalesView({
       recordingMethod: method,
       recordType: isComparisonOnly ? "COMPARISON" : "PRIMARY",
       isComparisonOnly,
-      cashAccountId: "acc-1", // Default Kas Resto
+      cashAccountId: DEFAULT_CASH_ACCOUNT_IDS.CASH, // Default Kas Laci Tunai Resto
       debitAmount: grossDebit,
       creditAmount: creditDeduction,
       netAmount,

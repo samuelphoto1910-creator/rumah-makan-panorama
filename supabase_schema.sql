@@ -202,6 +202,41 @@ INSERT INTO public.cash_accounts (name, account_type, initial_balance) VALUES
   ('Settlement QRIS Statis', 'QRIS', 3200000)
 ON CONFLICT DO NOTHING;
 
+-- ==============================================================================
+-- GRANT HAK AKSES (MENCEGAH ERROR 42501: permission denied)
+-- ==============================================================================
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+
+-- RLS policies WITH CHECK (true) agar INSERT & UPDATE tidak diblokir
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_transactions;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sales;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sale_items;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sale_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.menus;
+CREATE POLICY "Allow all for authenticated users" ON public.menus FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_accounts;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_accounts FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.fixed_assets;
+CREATE POLICY "Allow all for authenticated users" ON public.fixed_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.asset_maintenance;
+CREATE POLICY "Allow all for authenticated users" ON public.asset_maintenance FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.activity_logs;
+CREATE POLICY "Allow all for authenticated users" ON public.activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 -- Menu Bawaan
 INSERT INTO public.menus (name, category, price, status, description) VALUES
   ('Gurame Bakar Panorama', 'Makanan', 65000, 'active', 'Ikan gurame bakar bumbu rempah khas Panorama dengan sambal terasi segar.'),
@@ -222,3 +257,38 @@ INSERT INTO public.fixed_assets (name, category, purchase_date, purchase_price, 
   ('Set Meja & 4 Kursi Kayu Jati Belanda (10 Set)', 'Mebel & Interior', '2024-01-20', 12000000, 'Baik', 'Area Dine-in Utama', 'active', 'Vernis ulang terakhir Agustus 2026.'),
   ('Kulkas Showcase Minuman 2 Pintu', 'Pendingin & Elektronik', '2024-06-05', 5200000, 'Perlu Perbaikan', 'Area Kasir / Bar Minuman', 'maintenance', 'Lampu LED interior redup dan kipas evaporator bergetar pelan.')
 ON CONFLICT DO NOTHING;
+
+-- ==============================================================================
+-- GRANT HAK AKSES (MENCEGAH ERROR 42501: permission denied)
+-- ==============================================================================
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+
+-- RLS policies WITH CHECK (true) agar INSERT & UPDATE tidak diblokir
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_transactions;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sales;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sale_items;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sale_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.menus;
+CREATE POLICY "Allow all for authenticated users" ON public.menus FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_accounts;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_accounts FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.fixed_assets;
+CREATE POLICY "Allow all for authenticated users" ON public.fixed_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.asset_maintenance;
+CREATE POLICY "Allow all for authenticated users" ON public.asset_maintenance FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.activity_logs;
+CREATE POLICY "Allow all for authenticated users" ON public.activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);

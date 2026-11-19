@@ -18,6 +18,8 @@ import {
   initialTransactions,
   initialFixedAssets,
   initialAssetMaintenance,
+  DEFAULT_CASH_ACCOUNT_IDS,
+  sanitizeCashAccountId,
 } from "../data/mockData";
 import { createClient } from "../lib/supabase/client";
 import { Sidebar } from "../components/Sidebar";
@@ -29,6 +31,36 @@ import { CashFlowView } from "../components/CashFlowView";
 import { CashBookView } from "../components/CashBookView";
 import { AssetView } from "../components/AssetView";
 import { ReportView } from "../components/ReportView";
+
+const STORAGE_KEYS = {
+  TRANSACTIONS: "panorama_cash_transactions_v2",
+  SALES: "panorama_daily_sales_v2",
+  MENUS: "panorama_menus_v2",
+  ASSETS: "panorama_fixed_assets_v2",
+  MAINTENANCES: "panorama_asset_maintenance_v2",
+  ACCOUNTS: "panorama_cash_accounts_v2",
+};
+
+function loadStorage<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch (e) {
+    console.warn(`Gagal membaca ${key} dari localStorage:`, e);
+    return fallback;
+  }
+}
+
+function saveStorage<T>(key: string, data: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.warn(`Gagal menyimpan ${key} ke localStorage:`, e);
+  }
+}
 
 export default function Home() {
   const router = useRouter();
@@ -46,15 +78,32 @@ export default function Home() {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [userRole, setUserRole] = useState<"Owner" | "Admin" | "Staff">("Staff");
 
-  // Application Data State
-  const [sales, setSales] = useState<DailySale[]>(initialSales);
-  const [menus, setMenus] = useState<MenuItem[]>(initialMenuItems);
-  const [cashAccounts, setCashAccounts] = useState<CashAccount[]>(initialCashAccounts);
-  const [transactions, setTransactions] = useState<CashTransaction[]>(initialTransactions);
-  const [assets, setAssets] = useState<FixedAsset[]>(initialFixedAssets);
-  const [maintenances, setMaintenances] = useState<AssetMaintenance[]>(initialAssetMaintenance);
+  // Application Data State — load dari localStorage dulu, fallback ke initial
+  const [sales, setSales] = useState<DailySale[]>(() =>
+    loadStorage(STORAGE_KEYS.SALES, initialSales)
+  );
+  const [menus, setMenus] = useState<MenuItem[]>(() =>
+    loadStorage(STORAGE_KEYS.MENUS, initialMenuItems)
+  );
+  const [cashAccounts, setCashAccounts] = useState<CashAccount[]>(() =>
+    loadStorage(STORAGE_KEYS.ACCOUNTS, initialCashAccounts)
+  );
+  const [transactions, setTransactions] = useState<CashTransaction[]>(() =>
+    loadStorage(STORAGE_KEYS.TRANSACTIONS, initialTransactions)
+  );
+  const [assets, setAssets] = useState<FixedAsset[]>(() =>
+    loadStorage(STORAGE_KEYS.ASSETS, initialFixedAssets)
+  );
+  const [maintenances, setMaintenances] = useState<AssetMaintenance[]>(() =>
+    loadStorage(STORAGE_KEYS.MAINTENANCES, initialAssetMaintenance)
+  );
 
-  const currentDateStr = "19 November 2026 (WIB)";
+  const currentDateStr = new Date().toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }) + " (WIB)";
 
   // Check login status on page mount (Strict Supabase Auth - No Demo)
   useEffect(() => {
@@ -128,145 +177,159 @@ export default function Home() {
     }
   }, [userRole, activeTab]);
 
-  // Fetch initial database records
+  // Fetch initial database records and persist to localStorage
   const fetchSupabaseData = async (supabase: ReturnType<typeof createClient>) => {
     if (!supabase) return;
     try {
       // 1. Menus
-      const { data: menuData } = await supabase.from("menus").select("*");
+      const { data: menuData, error: menuErr } = await supabase.from("menus").select("*");
+      if (menuErr) console.error("Supabase menus error:", menuErr);
       if (menuData && menuData.length > 0) {
-        setMenus(
-          menuData.map((m: Record<string, unknown>) => ({
-            id: String(m.id),
-            name: String(m.name),
-            category: m.category as MenuItem["category"],
-            price: Number(m.price),
-            status: m.status as MenuItem["status"],
-            description: m.description ? String(m.description) : undefined,
-          }))
-        );
+        const parsed = menuData.map((m: Record<string, unknown>) => ({
+          id: String(m.id),
+          name: String(m.name),
+          category: m.category as MenuItem["category"],
+          price: Number(m.price),
+          status: m.status as MenuItem["status"],
+          description: m.description ? String(m.description) : undefined,
+        }));
+        setMenus(parsed);
+        saveStorage(STORAGE_KEYS.MENUS, parsed);
       }
 
-      // 2. Cash Accounts
-      const { data: accData } = await supabase.from("cash_accounts").select("*");
+      // 2. Cash Accounts — upsert defaults if empty
+      const { data: accData, error: accErr } = await supabase.from("cash_accounts").select("*");
+      if (accErr) console.error("Supabase cash_accounts error:", accErr);
       if (accData && accData.length > 0) {
-        setCashAccounts(
-          accData.map((a: Record<string, unknown>) => ({
-            id: String(a.id),
-            name: String(a.name),
-            accountType: a.account_type as CashAccount["accountType"],
-            initialBalance: Number(a.initial_balance),
-          }))
-        );
+        const parsed = accData.map((a: Record<string, unknown>) => ({
+          id: String(a.id),
+          name: String(a.name),
+          accountType: a.account_type as CashAccount["accountType"],
+          initialBalance: Number(a.initial_balance),
+        }));
+        setCashAccounts(parsed);
+        saveStorage(STORAGE_KEYS.ACCOUNTS, parsed);
+      } else {
+        // Auto-upsert 3 default cash accounts
+        for (const acc of initialCashAccounts) {
+          await supabase.from("cash_accounts").upsert({
+            id: acc.id,
+            name: acc.name,
+            account_type: acc.accountType,
+            initial_balance: acc.initialBalance,
+          }, { onConflict: "id" });
+        }
+        setCashAccounts(initialCashAccounts);
+        saveStorage(STORAGE_KEYS.ACCOUNTS, initialCashAccounts);
       }
 
       // 3. Daily Sales
-      const { data: salesData } = await supabase
+      const { data: salesData, error: salesErr } = await supabase
         .from("daily_sales")
         .select("*, daily_sale_items(*)")
         .order("business_date", { ascending: false });
-
+      if (salesErr) console.error("Supabase daily_sales error:", salesErr);
       if (salesData && salesData.length > 0) {
-        setSales(
-          salesData.map((s: Record<string, unknown>) => ({
-            id: String(s.id),
-            businessDate: String(s.business_date),
-            recordingMethod: s.recording_method as DailySale["recordingMethod"],
-            recordType: s.record_type as DailySale["recordType"],
-            isComparisonOnly: s.record_type === "COMPARISON",
-            cashAccountId: s.cash_account_id ? String(s.cash_account_id) : "acc-1",
-            debitAmount: Number(s.debit_amount) || Number(s.reported_total),
-            creditAmount: Number(s.credit_amount) || 0,
-            netAmount: Number(s.net_amount) || Number(s.reported_total),
-            reportedTotal: Number(s.reported_total),
-            notes: s.notes ? String(s.notes) : undefined,
-            createdBy: String(s.created_by),
-            createdAt: String(s.created_at),
-            status: s.status as DailySale["status"],
-            cancelReason: s.cancel_reason ? String(s.cancel_reason) : undefined,
-            items: Array.isArray(s.daily_sale_items)
-              ? (s.daily_sale_items as Record<string, unknown>[]).map((it) => ({
-                  id: String(it.id),
-                  dailySaleId: String(it.daily_sale_id),
-                  menuId: String(it.menu_id),
-                  menuNameSnapshot: String(it.menu_name_snapshot),
-                  unitPriceSnapshot: Number(it.unit_price_snapshot),
-                  quantity: Number(it.quantity),
-                  subtotal: Number(it.subtotal),
-                }))
-              : undefined,
-          }))
-        );
+        const parsed = salesData.map((s: Record<string, unknown>) => ({
+          id: String(s.id),
+          businessDate: String(s.business_date),
+          recordingMethod: s.recording_method as DailySale["recordingMethod"],
+          recordType: s.record_type as DailySale["recordType"],
+          isComparisonOnly: s.record_type === "COMPARISON",
+          cashAccountId: s.cash_account_id ? String(s.cash_account_id) : DEFAULT_CASH_ACCOUNT_IDS.CASH,
+          debitAmount: Number(s.debit_amount) || Number(s.reported_total),
+          creditAmount: Number(s.credit_amount) || 0,
+          netAmount: Number(s.net_amount) || Number(s.reported_total),
+          reportedTotal: Number(s.reported_total),
+          notes: s.notes ? String(s.notes) : undefined,
+          createdBy: String(s.created_by),
+          createdAt: String(s.created_at),
+          status: s.status as DailySale["status"],
+          cancelReason: s.cancel_reason ? String(s.cancel_reason) : undefined,
+          items: Array.isArray(s.daily_sale_items)
+            ? (s.daily_sale_items as Record<string, unknown>[]).map((it) => ({
+                id: String(it.id),
+                dailySaleId: String(it.daily_sale_id),
+                menuId: String(it.menu_id),
+                menuNameSnapshot: String(it.menu_name_snapshot),
+                unitPriceSnapshot: Number(it.unit_price_snapshot),
+                quantity: Number(it.quantity),
+                subtotal: Number(it.subtotal),
+              }))
+            : undefined,
+        }));
+        setSales(parsed);
+        saveStorage(STORAGE_KEYS.SALES, parsed);
       }
 
       // 4. Cash Transactions
-      const { data: txData } = await supabase
+      const { data: txData, error: txErr } = await supabase
         .from("cash_transactions")
         .select("*")
         .order("transaction_date", { ascending: false });
-
+      if (txErr) console.error("Supabase cash_transactions error:", txErr);
       if (txData && txData.length > 0) {
-        setTransactions(
-          txData.map((t: Record<string, unknown>) => ({
-            id: String(t.id),
-            transactionDate: String(t.transaction_date),
-            cashAccountId: String(t.cash_account_id),
-            categoryId: String(t.id),
-            categoryName: String(t.category_name),
-            direction: t.direction as CashTransaction["direction"],
-            amount: Number(t.amount),
-            description: String(t.description),
-            sourceType: t.source_type as CashTransaction["sourceType"],
-            sourceId: t.source_id ? String(t.source_id) : undefined,
-            createdBy: String(t.created_by),
-            createdAt: String(t.created_at),
-            status: t.status as CashTransaction["status"],
-            cancelReason: t.cancel_reason ? String(t.cancel_reason) : undefined,
-          }))
-        );
+        const parsed = txData.map((t: Record<string, unknown>) => ({
+          id: String(t.id),
+          transactionDate: String(t.transaction_date),
+          cashAccountId: String(t.cash_account_id),
+          categoryId: String(t.id),
+          categoryName: String(t.category_name),
+          direction: t.direction as CashTransaction["direction"],
+          amount: Number(t.amount),
+          description: String(t.description),
+          sourceType: t.source_type as CashTransaction["sourceType"],
+          sourceId: t.source_id ? String(t.source_id) : undefined,
+          createdBy: String(t.created_by),
+          createdAt: String(t.created_at),
+          status: t.status as CashTransaction["status"],
+          cancelReason: t.cancel_reason ? String(t.cancel_reason) : undefined,
+        }));
+        setTransactions(parsed);
+        saveStorage(STORAGE_KEYS.TRANSACTIONS, parsed);
       }
 
       // 5. Fixed Assets
-      const { data: assetData } = await supabase
+      const { data: assetData, error: assetErr } = await supabase
         .from("fixed_assets")
         .select("*")
         .order("purchase_date", { ascending: false });
-
+      if (assetErr) console.error("Supabase fixed_assets error:", assetErr);
       if (assetData && assetData.length > 0) {
-        setAssets(
-          assetData.map((a: Record<string, unknown>) => ({
-            id: String(a.id),
-            name: String(a.name),
-            category: String(a.category),
-            purchaseDate: String(a.purchase_date),
-            purchasePrice: a.purchase_price ? Number(a.purchase_price) : undefined,
-            condition: a.condition as FixedAsset["condition"],
-            location: String(a.location),
-            status: a.status as FixedAsset["status"],
-            notes: a.notes ? String(a.notes) : undefined,
-          }))
-        );
+        const parsed = assetData.map((a: Record<string, unknown>) => ({
+          id: String(a.id),
+          name: String(a.name),
+          category: String(a.category),
+          purchaseDate: String(a.purchase_date),
+          purchasePrice: a.purchase_price ? Number(a.purchase_price) : undefined,
+          condition: a.condition as FixedAsset["condition"],
+          location: String(a.location),
+          status: a.status as FixedAsset["status"],
+          notes: a.notes ? String(a.notes) : undefined,
+        }));
+        setAssets(parsed);
+        saveStorage(STORAGE_KEYS.ASSETS, parsed);
       }
 
       // 6. Asset Maintenance
-      const { data: mntData } = await supabase
+      const { data: mntData, error: mntErr } = await supabase
         .from("asset_maintenance")
         .select("*")
         .order("maintenance_date", { ascending: false });
-
+      if (mntErr) console.error("Supabase asset_maintenance error:", mntErr);
       if (mntData && mntData.length > 0) {
-        setMaintenances(
-          mntData.map((m: Record<string, unknown>) => ({
-            id: String(m.id),
-            assetId: String(m.asset_id),
-            assetName: String(m.asset_name),
-            maintenanceDate: String(m.maintenance_date),
-            maintenanceType: String(m.maintenance_type),
-            description: String(m.description),
-            cost: Number(m.cost),
-            notes: m.notes ? String(m.notes) : undefined,
-          }))
-        );
+        const parsed = mntData.map((m: Record<string, unknown>) => ({
+          id: String(m.id),
+          assetId: String(m.asset_id),
+          assetName: String(m.asset_name),
+          maintenanceDate: String(m.maintenance_date),
+          maintenanceType: String(m.maintenance_type),
+          description: String(m.description),
+          cost: Number(m.cost),
+          notes: m.notes ? String(m.notes) : undefined,
+        }));
+        setMaintenances(parsed);
+        saveStorage(STORAGE_KEYS.MAINTENANCES, parsed);
       }
     } catch (e) {
       console.error("Gagal mengambil data dari Supabase:", e);
@@ -289,192 +352,192 @@ export default function Home() {
 
   // Handlers for Penjualan (Sales) with Debit & Kredit
   const handleAddSale = async (newSale: DailySale) => {
-    setSales([newSale, ...sales]);
+    const safeSale = { ...newSale, cashAccountId: sanitizeCashAccountId(newSale.cashAccountId) };
+    const updatedSales = [safeSale, ...sales];
+    setSales(updatedSales);
+    saveStorage(STORAGE_KEYS.SALES, updatedSales);
 
     // Jika BUKAN pembanding, otomatis buat mutasi kas masuk (Debit Kas)
-    if (!newSale.isComparisonOnly) {
-      const targetAccount = cashAccounts.find((a) => a.id === newSale.cashAccountId);
+    if (!safeSale.isComparisonOnly) {
+      const targetAccount = cashAccounts.find((a) => a.id === safeSale.cashAccountId);
       const autoCashTx: CashTransaction = {
-        id: `tx-sale-${newSale.id}`,
-        transactionDate: newSale.businessDate,
-        cashAccountId: newSale.cashAccountId,
+        id: `tx-sale-${safeSale.id}`,
+        transactionDate: safeSale.businessDate,
+        cashAccountId: safeSale.cashAccountId,
         categoryId: "cat-sale",
         categoryName: "Hasil Penjualan Resto",
         direction: "IN",
-        amount: newSale.netAmount,
-        description: `Omzet penjualan ${newSale.businessDate} ke ${targetAccount?.name || "Kas"} (${
-          newSale.recordingMethod === "PER_MENU" ? "Per Menu" : "Total Langsung"
-        })${newSale.creditAmount > 0 ? ` [Potongan Rp ${newSale.creditAmount}]` : ""}`,
+        amount: safeSale.netAmount,
+        description: `Omzet penjualan ${safeSale.businessDate} ke ${targetAccount?.name || "Kas"} (${
+          safeSale.recordingMethod === "PER_MENU" ? "Per Menu" : "Total Langsung"
+        })${safeSale.creditAmount > 0 ? ` [Potongan Rp ${safeSale.creditAmount}]` : ""}`,
         sourceType: "SALES",
-        sourceId: newSale.id,
-        createdBy: newSale.createdBy,
+        sourceId: safeSale.id,
+        createdBy: safeSale.createdBy,
         createdAt: new Date().toISOString(),
         status: "ACTIVE",
       };
-      setTransactions((prev) => [autoCashTx, ...prev]);
+      setTransactions((prev) => {
+        const next = [autoCashTx, ...prev];
+        saveStorage(STORAGE_KEYS.TRANSACTIONS, next);
+        return next;
+      });
     }
 
-    // Persist to Supabase if connected
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase.from("daily_sales").insert({
-          business_date: newSale.businessDate,
-          recording_method: newSale.recordingMethod,
-          record_type: newSale.recordType,
-          cash_account_id: newSale.cashAccountId.startsWith("acc-") ? null : newSale.cashAccountId,
-          debit_amount: newSale.debitAmount,
-          credit_amount: newSale.creditAmount,
-          net_amount: newSale.netAmount,
-          reported_total: newSale.reportedTotal,
-          notes: newSale.notes,
-          created_by: currentUser?.fullName || newSale.createdBy,
-          status: newSale.status,
-        });
-      } catch (err) {
-        console.error("Gagal menyimpan ke Supabase daily_sales:", err);
-      }
+      const { error } = await supabase.from("daily_sales").insert({
+        business_date: safeSale.businessDate,
+        recording_method: safeSale.recordingMethod,
+        record_type: safeSale.recordType,
+        cash_account_id: safeSale.cashAccountId,
+        debit_amount: safeSale.debitAmount,
+        credit_amount: safeSale.creditAmount,
+        net_amount: safeSale.netAmount,
+        reported_total: safeSale.reportedTotal,
+        notes: safeSale.notes,
+        created_by: currentUser?.fullName || safeSale.createdBy,
+        status: safeSale.status,
+      });
+      if (error) console.error("Gagal menyimpan ke Supabase daily_sales:", error);
     }
   };
 
   const handleCancelSale = async (saleId: string, reason: string) => {
-    setSales(
-      sales.map((s) =>
-        s.id === saleId ? { ...s, status: "CANCELLED", cancelReason: reason } : s
-      )
+    const updatedSales = sales.map((s) =>
+      s.id === saleId ? { ...s, status: "CANCELLED" as const, cancelReason: reason } : s
     );
+    setSales(updatedSales);
+    saveStorage(STORAGE_KEYS.SALES, updatedSales);
 
-    setTransactions(
-      transactions.map((t) =>
-        t.sourceId === saleId
-          ? { ...t, status: "CANCELLED", cancelReason: `Penjualan #${saleId} dibatalkan: ${reason}` }
-          : t
-      )
+    const updatedTx = transactions.map((t) =>
+      t.sourceId === saleId
+        ? { ...t, status: "CANCELLED" as const, cancelReason: `Penjualan #${saleId} dibatalkan: ${reason}` }
+        : t
     );
+    setTransactions(updatedTx);
+    saveStorage(STORAGE_KEYS.TRANSACTIONS, updatedTx);
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase
-          .from("daily_sales")
-          .update({ status: "CANCELLED", cancel_reason: reason })
-          .eq("id", saleId);
-      } catch (err) {
-        console.error("Gagal membatalkan di Supabase:", err);
-      }
+      const { error } = await supabase
+        .from("daily_sales")
+        .update({ status: "CANCELLED", cancel_reason: reason })
+        .eq("id", saleId);
+      if (error) console.error("Gagal membatalkan di Supabase:", error);
     }
   };
 
   // Handlers for CashFlow CRUD (Pemasukan & Pengeluaran)
   const handleAddTransaction = async (newTx: CashTransaction) => {
-    setTransactions([newTx, ...transactions]);
+    const safeTx = { ...newTx, cashAccountId: sanitizeCashAccountId(newTx.cashAccountId) };
+    const updatedTx = [safeTx, ...transactions];
+    setTransactions(updatedTx);
+    saveStorage(STORAGE_KEYS.TRANSACTIONS, updatedTx);
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase.from("cash_transactions").insert({
-          transaction_date: newTx.transactionDate,
-          cash_account_id: newTx.cashAccountId.startsWith("acc-") ? null : newTx.cashAccountId,
-          category_name: newTx.categoryName,
-          direction: newTx.direction,
-          amount: newTx.amount,
-          description: newTx.description,
-          source_type: newTx.sourceType || "MANUAL",
-          created_by: currentUser?.fullName || newTx.createdBy,
-          status: "ACTIVE",
-        });
-      } catch (err) {
-        console.error("Gagal simpan transaksi ke Supabase:", err);
-      }
+      const { error } = await supabase.from("cash_transactions").insert({
+        transaction_date: safeTx.transactionDate,
+        cash_account_id: safeTx.cashAccountId,
+        category_name: safeTx.categoryName,
+        direction: safeTx.direction,
+        amount: safeTx.amount,
+        description: safeTx.description,
+        source_type: safeTx.sourceType || "MANUAL",
+        created_by: currentUser?.fullName || safeTx.createdBy,
+        status: "ACTIVE",
+      });
+      if (error) console.error("Gagal simpan transaksi ke Supabase:", error);
     }
   };
 
   const handleUpdateTransaction = async (updatedTx: CashTransaction) => {
-    setTransactions(
-      transactions.map((t) => (t.id === updatedTx.id ? updatedTx : t))
-    );
+    const safeTx = { ...updatedTx, cashAccountId: sanitizeCashAccountId(updatedTx.cashAccountId) };
+    const updatedList = transactions.map((t) => (t.id === safeTx.id ? safeTx : t));
+    setTransactions(updatedList);
+    saveStorage(STORAGE_KEYS.TRANSACTIONS, updatedList);
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase
-          .from("cash_transactions")
-          .update({
-            transaction_date: updatedTx.transactionDate,
-            category_name: updatedTx.categoryName,
-            amount: updatedTx.amount,
-            description: updatedTx.description,
-          })
-          .eq("id", updatedTx.id);
-      } catch (err) {
-        console.error("Gagal update transaksi ke Supabase:", err);
-      }
+      const { error } = await supabase
+        .from("cash_transactions")
+        .update({
+          transaction_date: safeTx.transactionDate,
+          cash_account_id: safeTx.cashAccountId,
+          category_name: safeTx.categoryName,
+          amount: safeTx.amount,
+          description: safeTx.description,
+        })
+        .eq("id", safeTx.id);
+      if (error) console.error("Gagal update transaksi ke Supabase:", error);
     }
   };
 
   const handleDeleteTransaction = async (txId: string) => {
-    setTransactions(transactions.filter((t) => t.id !== txId));
+    const updatedTx = transactions.filter((t) => t.id !== txId);
+    setTransactions(updatedTx);
+    saveStorage(STORAGE_KEYS.TRANSACTIONS, updatedTx);
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase.from("cash_transactions").delete().eq("id", txId);
-      } catch (err) {
-        console.error("Gagal delete transaksi di Supabase:", err);
-      }
+      const { error } = await supabase.from("cash_transactions").delete().eq("id", txId);
+      if (error) console.error("Gagal delete transaksi di Supabase:", error);
     }
   };
 
   // Handlers for Master Menu
   const handleAddMenu = async (newMenu: MenuItem) => {
-    setMenus([...menus, newMenu]);
+    const updatedMenus = [...menus, newMenu];
+    setMenus(updatedMenus);
+    saveStorage(STORAGE_KEYS.MENUS, updatedMenus);
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase.from("menus").insert({
-          name: newMenu.name,
-          category: newMenu.category,
-          price: newMenu.price,
-          status: newMenu.status,
-          description: newMenu.description,
-        });
-      } catch (err) {
-        console.error("Gagal tambah menu ke Supabase:", err);
-      }
+      const { error } = await supabase.from("menus").insert({
+        name: newMenu.name,
+        category: newMenu.category,
+        price: newMenu.price,
+        status: newMenu.status,
+        description: newMenu.description,
+      });
+      if (error) console.error("Gagal tambah menu ke Supabase:", error);
     }
   };
 
   const handleToggleMenuStatus = async (menuId: string) => {
     const updatedStatus = menus.find((m) => m.id === menuId)?.status === "active" ? "inactive" : "active";
-    setMenus(
-      menus.map((m) =>
-        m.id === menuId ? { ...m, status: updatedStatus } : m
-      )
+    const updatedMenus = menus.map((m) =>
+      m.id === menuId ? { ...m, status: updatedStatus as MenuItem["status"] } : m
     );
+    setMenus(updatedMenus);
+    saveStorage(STORAGE_KEYS.MENUS, updatedMenus);
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase.from("menus").update({ status: updatedStatus }).eq("id", menuId);
-      } catch (err) {
-        console.error("Gagal update status menu di Supabase:", err);
-      }
+      const { error } = await supabase.from("menus").update({ status: updatedStatus }).eq("id", menuId);
+      if (error) console.error("Gagal update status menu di Supabase:", error);
     }
   };
 
   // Handlers for Fixed Assets & Asset Masuk
   const handleAddAsset = async (newAsset: FixedAsset, deductCashAccountId?: string) => {
-    setAssets((prev) => [newAsset, ...prev]);
+    setAssets((prev) => {
+      const next = [newAsset, ...prev];
+      saveStorage(STORAGE_KEYS.ASSETS, next);
+      return next;
+    });
 
-    // Jika dipotong dari kas resto, otomatis buat transaksi kas keluar (Buku Kas)
-    if (deductCashAccountId && (newAsset.purchasePrice || 0) > 0) {
+    const safeCashId = deductCashAccountId ? sanitizeCashAccountId(deductCashAccountId) : undefined;
+
+    // Jika dipotong dari kas resto, otomatis buat transaksi kas keluar
+    if (safeCashId && (newAsset.purchasePrice || 0) > 0) {
       const price = newAsset.purchasePrice || 0;
-      const targetAcc = cashAccounts.find((a) => a.id === deductCashAccountId);
+      const targetAcc = cashAccounts.find((a) => a.id === safeCashId);
       const assetTx: CashTransaction = {
         id: `tx-ast-${newAsset.id}`,
         transactionDate: newAsset.purchaseDate,
-        cashAccountId: deductCashAccountId,
+        cashAccountId: safeCashId,
         categoryId: "cat-exp-asset",
         categoryName: "Pembelian / Perolehan Aset",
         direction: "OUT",
@@ -486,64 +549,66 @@ export default function Home() {
         createdAt: new Date().toISOString(),
         status: "ACTIVE",
       };
-      setTransactions((prev) => [assetTx, ...prev]);
+      setTransactions((prev) => {
+        const next = [assetTx, ...prev];
+        saveStorage(STORAGE_KEYS.TRANSACTIONS, next);
+        return next;
+      });
 
       const supabase = createClient();
       if (supabase) {
-        try {
-          await supabase.from("cash_transactions").insert({
-            transaction_date: assetTx.transactionDate,
-            cash_account_id: assetTx.cashAccountId,
-            category_name: assetTx.categoryName,
-            direction: assetTx.direction,
-            amount: assetTx.amount,
-            description: assetTx.description,
-            source_type: assetTx.sourceType,
-            source_id: assetTx.sourceId,
-            created_by: assetTx.createdBy,
-          });
-        } catch (err) {
-          console.error("Gagal simpan transaksi kas beli aset ke Supabase:", err);
-        }
+        const { error } = await supabase.from("cash_transactions").insert({
+          transaction_date: assetTx.transactionDate,
+          cash_account_id: assetTx.cashAccountId,
+          category_name: assetTx.categoryName,
+          direction: assetTx.direction,
+          amount: assetTx.amount,
+          description: assetTx.description,
+          source_type: assetTx.sourceType,
+          source_id: assetTx.sourceId,
+          created_by: assetTx.createdBy,
+        });
+        if (error) console.error("Gagal simpan transaksi kas beli aset ke Supabase:", error);
       }
     }
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        const combinedNotes = [
-          newAsset.notes,
-          newAsset.vendor ? `Toko: ${newAsset.vendor}` : null,
-          newAsset.invoiceNumber ? `No. Nota: ${newAsset.invoiceNumber}` : null,
-          newAsset.paymentSource ? `Sumber: ${newAsset.paymentSource}` : null,
-        ]
-          .filter(Boolean)
-          .join(" • ");
+      const combinedNotes = [
+        newAsset.notes,
+        newAsset.vendor ? `Toko: ${newAsset.vendor}` : null,
+        newAsset.invoiceNumber ? `No. Nota: ${newAsset.invoiceNumber}` : null,
+        newAsset.paymentSource ? `Sumber: ${newAsset.paymentSource}` : null,
+      ]
+        .filter(Boolean)
+        .join(" • ");
 
-        await supabase.from("fixed_assets").insert({
-          name: newAsset.name,
-          category: newAsset.category,
-          purchase_date: newAsset.purchaseDate,
-          purchase_price: newAsset.purchasePrice,
-          condition: newAsset.condition,
-          location: newAsset.location,
-          status: newAsset.status,
-          notes: combinedNotes || undefined,
-        });
-      } catch (err) {
-        console.error("Gagal simpan aset baru ke Supabase:", err);
-      }
+      const { error } = await supabase.from("fixed_assets").insert({
+        name: newAsset.name,
+        category: newAsset.category,
+        purchase_date: newAsset.purchaseDate,
+        purchase_price: newAsset.purchasePrice,
+        condition: newAsset.condition,
+        location: newAsset.location,
+        status: newAsset.status,
+        notes: combinedNotes || undefined,
+      });
+      if (error) console.error("Gagal simpan aset baru ke Supabase:", error);
     }
   };
 
   const handleAddMaintenance = async (newMnt: AssetMaintenance) => {
-    setMaintenances((prev) => [newMnt, ...prev]);
+    setMaintenances((prev) => {
+      const next = [newMnt, ...prev];
+      saveStorage(STORAGE_KEYS.MAINTENANCES, next);
+      return next;
+    });
 
     if (newMnt.cost > 0) {
       const maintenanceTx: CashTransaction = {
         id: `tx-mnt-${newMnt.id}`,
         transactionDate: newMnt.maintenanceDate,
-        cashAccountId: "acc-1", // Kas Tunai
+        cashAccountId: DEFAULT_CASH_ACCOUNT_IDS.CASH,
         categoryId: "cat-exp-mnt",
         categoryName: "Perawatan Alat / Dapur",
         direction: "OUT",
@@ -555,43 +620,41 @@ export default function Home() {
         createdAt: new Date().toISOString(),
         status: "ACTIVE",
       };
-      setTransactions((prev) => [maintenanceTx, ...prev]);
+      setTransactions((prev) => {
+        const next = [maintenanceTx, ...prev];
+        saveStorage(STORAGE_KEYS.TRANSACTIONS, next);
+        return next;
+      });
 
       const supabase = createClient();
       if (supabase) {
-        try {
-          await supabase.from("cash_transactions").insert({
-            transaction_date: maintenanceTx.transactionDate,
-            cash_account_id: maintenanceTx.cashAccountId,
-            category_name: maintenanceTx.categoryName,
-            direction: maintenanceTx.direction,
-            amount: maintenanceTx.amount,
-            description: maintenanceTx.description,
-            source_type: maintenanceTx.sourceType,
-            source_id: maintenanceTx.sourceId,
-            created_by: maintenanceTx.createdBy,
-          });
-        } catch (err) {
-          console.error("Gagal simpan transaksi servis aset ke Supabase:", err);
-        }
+        const { error } = await supabase.from("cash_transactions").insert({
+          transaction_date: maintenanceTx.transactionDate,
+          cash_account_id: maintenanceTx.cashAccountId,
+          category_name: maintenanceTx.categoryName,
+          direction: maintenanceTx.direction,
+          amount: maintenanceTx.amount,
+          description: maintenanceTx.description,
+          source_type: maintenanceTx.sourceType,
+          source_id: maintenanceTx.sourceId,
+          created_by: maintenanceTx.createdBy,
+        });
+        if (error) console.error("Gagal simpan transaksi servis aset ke Supabase:", error);
       }
     }
 
     const supabase = createClient();
     if (supabase) {
-      try {
-        await supabase.from("asset_maintenance").insert({
-          asset_id: newMnt.assetId,
-          asset_name: newMnt.assetName,
-          maintenance_date: newMnt.maintenanceDate,
-          maintenance_type: newMnt.maintenanceType,
-          description: newMnt.description,
-          cost: newMnt.cost,
-          notes: newMnt.notes,
-        });
-      } catch (err) {
-        console.error("Gagal simpan servis aset ke Supabase:", err);
-      }
+      const { error } = await supabase.from("asset_maintenance").insert({
+        asset_id: newMnt.assetId,
+        asset_name: newMnt.assetName,
+        maintenance_date: newMnt.maintenanceDate,
+        maintenance_type: newMnt.maintenanceType,
+        description: newMnt.description,
+        cost: newMnt.cost,
+        notes: newMnt.notes,
+      });
+      if (error) console.error("Gagal simpan servis aset ke Supabase:", error);
     }
   };
 

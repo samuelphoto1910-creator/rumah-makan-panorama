@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { CashTransaction, CashAccount } from "../types";
+import { sanitizeCashAccountId } from "../data/mockData";
 import { IconArrowDownLeft, IconArrowUpRight, IconPlus, IconEdit, IconTrash } from "./icons";
 
 interface CashFlowViewProps {
@@ -25,13 +26,22 @@ export function CashFlowView({
 
   // Form State for Adding
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
-  const [transactionDate, setTransactionDate] = useState("2026-11-19");
+  const [transactionDate, setTransactionDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
   const [accountId, setAccountId] = useState(cashAccounts[0]?.id || "");
   const [categoryName, setCategoryName] = useState(
     isIncome ? "Pendapatan Lain-Lain" : "Bahan Baku & Belanja Harian"
   );
   const [amount, setAmount] = useState<number | "">("");
   const [description, setDescription] = useState("");
+
+  // Auto-sync accountId if cashAccounts loads asynchronously
+  React.useEffect(() => {
+    if ((!accountId || accountId === "acc-1") && cashAccounts.length > 0) {
+      setAccountId(cashAccounts[0].id);
+    }
+  }, [cashAccounts, accountId]);
 
   // Edit Modal State
   const [editingTx, setEditingTx] = useState<CashTransaction | null>(null);
@@ -87,7 +97,7 @@ export function CashFlowView({
     const newTx: CashTransaction = {
       id: `tx-${Date.now()}`,
       transactionDate,
-      cashAccountId: accountId || cashAccounts[0]?.id || "acc-1",
+      cashAccountId: sanitizeCashAccountId(accountId || cashAccounts[0]?.id),
       categoryId: `cat-${Date.now()}`,
       categoryName,
       direction: isIncome ? "IN" : "OUT",
@@ -129,7 +139,7 @@ export function CashFlowView({
     const updated: CashTransaction = {
       ...editingTx,
       transactionDate: editDate,
-      cashAccountId: editAccountId,
+      cashAccountId: sanitizeCashAccountId(editAccountId || cashAccounts[0]?.id),
       categoryName: editCategoryName,
       amount: parsedAmount,
       description: editDescription.trim(),
