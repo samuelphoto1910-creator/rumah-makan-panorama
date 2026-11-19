@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- SKEMA DATABASE SUPABASE: SISTEM PENCATATAN RUMAH MAKAN PANORAMA
--- Versi: 3.0 (Berdasarkan PRD Rumah Makan Panorama)
+-- Versi: 3.1 (Idempoten - Aman Dijalankan Berulang Kali Tanpa Error)
 -- ==============================================================================
 
 -- 1. EXTENSIONS
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
 );
 
 -- ==============================================================================
--- ROW LEVEL SECURITY (RLS)
+-- ROW LEVEL SECURITY (RLS) & POLICIES (DROP SEBELUM CREATE AGAR TIDAK ERROR 42710)
 -- ==============================================================================
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.menus ENABLE ROW LEVEL SECURITY;
@@ -140,27 +140,53 @@ ALTER TABLE public.fixed_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asset_maintenance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
--- Policy Profiles: User can read all profiles, update own
-CREATE POLICY "Profiles readable by authenticated users" ON public.profiles
-  FOR SELECT TO authenticated USING (true);
+-- 1. Profiles
+DROP POLICY IF EXISTS "Profiles readable by authenticated users" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.profiles;
+CREATE POLICY "Allow all for authenticated users" ON public.profiles FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Users can update own profile" ON public.profiles
-  FOR UPDATE TO authenticated USING (auth.uid() = id);
+-- 2. Menus
+DROP POLICY IF EXISTS "Authenticated users can read menus" ON public.menus;
+DROP POLICY IF EXISTS "Authenticated users can modify menus" ON public.menus;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.menus;
+CREATE POLICY "Allow all for authenticated users" ON public.menus FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
--- Policies for Authenticated Staff/Admin/Owner:
-CREATE POLICY "Authenticated users can read menus" ON public.menus FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Authenticated users can modify menus" ON public.menus FOR ALL TO authenticated USING (true);
+-- 3. Cash Accounts
+DROP POLICY IF EXISTS "Authenticated users can read cash accounts" ON public.cash_accounts;
+DROP POLICY IF EXISTS "Authenticated users can modify cash accounts" ON public.cash_accounts;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_accounts;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_accounts FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Authenticated users can read cash accounts" ON public.cash_accounts FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Authenticated users can modify cash accounts" ON public.cash_accounts FOR ALL TO authenticated USING (true);
+-- 4. Daily Sales
+DROP POLICY IF EXISTS "Authenticated users can manage daily sales" ON public.daily_sales;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sales;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Authenticated users can manage daily sales" ON public.daily_sales FOR ALL TO authenticated USING (true);
-CREATE POLICY "Authenticated users can manage daily sale items" ON public.daily_sale_items FOR ALL TO authenticated USING (true);
+-- 5. Daily Sale Items
+DROP POLICY IF EXISTS "Authenticated users can manage daily sale items" ON public.daily_sale_items;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sale_items;
+CREATE POLICY "Allow all for authenticated users" ON public.daily_sale_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Authenticated users can manage cash transactions" ON public.cash_transactions FOR ALL TO authenticated USING (true);
-CREATE POLICY "Authenticated users can manage fixed assets" ON public.fixed_assets FOR ALL TO authenticated USING (true);
-CREATE POLICY "Authenticated users can manage maintenance" ON public.asset_maintenance FOR ALL TO authenticated USING (true);
-CREATE POLICY "Authenticated users can manage activity logs" ON public.activity_logs FOR ALL TO authenticated USING (true);
+-- 6. Cash Transactions
+DROP POLICY IF EXISTS "Authenticated users can manage cash transactions" ON public.cash_transactions;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_transactions;
+CREATE POLICY "Allow all for authenticated users" ON public.cash_transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 7. Fixed Assets
+DROP POLICY IF EXISTS "Authenticated users can manage fixed assets" ON public.fixed_assets;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.fixed_assets;
+CREATE POLICY "Allow all for authenticated users" ON public.fixed_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 8. Asset Maintenance
+DROP POLICY IF EXISTS "Authenticated users can manage maintenance" ON public.asset_maintenance;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.asset_maintenance;
+CREATE POLICY "Allow all for authenticated users" ON public.asset_maintenance FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 9. Activity Logs
+DROP POLICY IF EXISTS "Authenticated users can manage activity logs" ON public.activity_logs;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.activity_logs;
+CREATE POLICY "Allow all for authenticated users" ON public.activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ==============================================================================
 -- TRIGGER AUTO-CREATE PROFILE ON USER SIGNUP (BULLETPROOF)
@@ -180,7 +206,6 @@ BEGIN
     full_name = EXCLUDED.full_name;
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
-  -- Jangan pernah biarkan trigger menghentikan proses pembuatan user di auth
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -190,20 +215,8 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-
 -- ==============================================================================
--- INITIAL SEED DATA
--- ==============================================================================
-
--- Akun Kas Bawaan
-INSERT INTO public.cash_accounts (name, account_type, initial_balance) VALUES
-  ('Kas Laci Kasir (Tunai)', 'CASH', 1500000),
-  ('Rekening Operasional (BCA)', 'BANK', 12500000),
-  ('Settlement QRIS Statis', 'QRIS', 3200000)
-ON CONFLICT DO NOTHING;
-
--- ==============================================================================
--- GRANT HAK AKSES (MENCEGAH ERROR 42501: permission denied)
+-- GRANT HAK AKSES LENGKAP (MENCEGAH ERROR 42501: permission denied)
 -- ==============================================================================
 GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
@@ -212,30 +225,16 @@ GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, ser
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
 
--- RLS policies WITH CHECK (true) agar INSERT & UPDATE tidak diblokir
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_transactions;
-CREATE POLICY "Allow all for authenticated users" ON public.cash_transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- ==============================================================================
+-- INITIAL SEED DATA (DENGAN UUID STANDAR SESUAI SISTEM WEB)
+-- ==============================================================================
 
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sales;
-CREATE POLICY "Allow all for authenticated users" ON public.daily_sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sale_items;
-CREATE POLICY "Allow all for authenticated users" ON public.daily_sale_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.menus;
-CREATE POLICY "Allow all for authenticated users" ON public.menus FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_accounts;
-CREATE POLICY "Allow all for authenticated users" ON public.cash_accounts FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.fixed_assets;
-CREATE POLICY "Allow all for authenticated users" ON public.fixed_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.asset_maintenance;
-CREATE POLICY "Allow all for authenticated users" ON public.asset_maintenance FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.activity_logs;
-CREATE POLICY "Allow all for authenticated users" ON public.activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- 3 Akun Kas Bawaan (UUID Tetap Standar)
+INSERT INTO public.cash_accounts (id, name, account_type, initial_balance) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'Kas Laci Kasir (Tunai)', 'CASH', 0),
+  ('22222222-2222-2222-2222-222222222222', 'Rekening Operasional (BCA)', 'BANK', 0),
+  ('33333333-3333-3333-3333-333333333333', 'Settlement QRIS Statis', 'QRIS', 0)
+ON CONFLICT (id) DO NOTHING;
 
 -- Menu Bawaan
 INSERT INTO public.menus (name, category, price, status, description) VALUES
@@ -257,38 +256,3 @@ INSERT INTO public.fixed_assets (name, category, purchase_date, purchase_price, 
   ('Set Meja & 4 Kursi Kayu Jati Belanda (10 Set)', 'Mebel & Interior', '2024-01-20', 12000000, 'Baik', 'Area Dine-in Utama', 'active', 'Vernis ulang terakhir Agustus 2026.'),
   ('Kulkas Showcase Minuman 2 Pintu', 'Pendingin & Elektronik', '2024-06-05', 5200000, 'Perlu Perbaikan', 'Area Kasir / Bar Minuman', 'maintenance', 'Lampu LED interior redup dan kipas evaporator bergetar pelan.')
 ON CONFLICT DO NOTHING;
-
--- ==============================================================================
--- GRANT HAK AKSES (MENCEGAH ERROR 42501: permission denied)
--- ==============================================================================
-GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
-GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
-
--- RLS policies WITH CHECK (true) agar INSERT & UPDATE tidak diblokir
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_transactions;
-CREATE POLICY "Allow all for authenticated users" ON public.cash_transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sales;
-CREATE POLICY "Allow all for authenticated users" ON public.daily_sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.daily_sale_items;
-CREATE POLICY "Allow all for authenticated users" ON public.daily_sale_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.menus;
-CREATE POLICY "Allow all for authenticated users" ON public.menus FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_accounts;
-CREATE POLICY "Allow all for authenticated users" ON public.cash_accounts FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.fixed_assets;
-CREATE POLICY "Allow all for authenticated users" ON public.fixed_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.asset_maintenance;
-CREATE POLICY "Allow all for authenticated users" ON public.asset_maintenance FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.activity_logs;
-CREATE POLICY "Allow all for authenticated users" ON public.activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);

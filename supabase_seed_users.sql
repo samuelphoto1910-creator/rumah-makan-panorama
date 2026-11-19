@@ -264,6 +264,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon,
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
 
 -- Kebijakan RLS dengan WITH CHECK (true) agar INSERT & UPDATE tidak pernah diblokir
+DROP POLICY IF EXISTS "Profiles readable by authenticated users" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.profiles;
+CREATE POLICY "Allow all for authenticated users" ON public.profiles FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.cash_transactions;
 CREATE POLICY "Allow all for authenticated users" ON public.cash_transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
