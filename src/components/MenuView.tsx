@@ -229,8 +229,8 @@ export function MenuView({ menus, onAddMenu, onToggleStatus, userRole }: MenuVie
                 <input
                   type="number"
                   placeholder="Contoh: 35000"
-                  min="500"
-                  step="500"
+                  min="0"
+                  step="any"
                   value={price}
                   onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full p-2.5 rounded-lg border border-slate-300 bg-white font-bold"

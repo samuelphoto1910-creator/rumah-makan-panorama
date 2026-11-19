@@ -646,6 +646,7 @@ export function AssetView({
                     <input
                       type="number"
                       min="0"
+                      step="any"
                       required
                       value={purchasePrice}
                       onChange={(e) => setPurchasePrice(e.target.value === "" ? "" : Number(e.target.value))}
@@ -1063,6 +1064,7 @@ export function AssetView({
                 <input
                   type="number"
                   min="0"
+                  step="any"
                   required
                   value={maintenanceCost}
                   onChange={(e) => setMaintenanceCost(e.target.value === "" ? "" : Number(e.target.value))}

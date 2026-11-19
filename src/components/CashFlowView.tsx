@@ -259,8 +259,8 @@ export function CashFlowView({
                 <label className="block font-semibold text-slate-700 mb-1">Nominal (Rp) *</label>
                 <input
                   type="number"
-                  min="500"
-                  step="500"
+                  min="1"
+                  step="any"
                   placeholder="Contoh: 250000"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
@@ -509,8 +509,8 @@ export function CashFlowView({
                 <label className="block font-semibold text-slate-700 mb-1">Nominal (Rp) *</label>
                 <input
                   type="number"
-                  min="500"
-                  step="500"
+                  min="1"
+                  step="any"
                   value={editAmount}
                   onChange={(e) => setEditAmount(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full p-2.5 rounded-lg border border-slate-300 bg-white font-bold"

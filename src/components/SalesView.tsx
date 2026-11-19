@@ -382,8 +382,8 @@ export function SalesView({
                     </span>
                     <input
                       type="number"
-                      min="1000"
-                      step="1000"
+                      min="0"
+                      step="any"
                       value={dailyTotalInput}
                       onChange={(e) => setDailyTotalInput(e.target.value === "" ? "" : Number(e.target.value))}
                       placeholder="Contoh: 3500000"
@@ -420,7 +420,7 @@ export function SalesView({
                   <input
                     type="number"
                     min="0"
-                    step="500"
+                    step="any"
                     value={creditAmountInput}
                     onChange={(e) => setCreditAmountInput(e.target.value === "" ? "" : Number(e.target.value))}
                     placeholder="0"
