@@ -229,8 +229,8 @@ export default function Home() {
         .select("*, daily_sale_items(*)")
         .order("business_date", { ascending: false });
       if (salesErr) console.error("Supabase daily_sales error:", salesErr);
-      if (!salesErr && salesData) {
-        const parsed = salesData.map((s: Record<string, unknown>) => ({
+      if (!salesErr) {
+        const parsed = (salesData ?? []).map((s: Record<string, unknown>) => ({
           id: String(s.id),
           businessDate: String(s.business_date),
           recordingMethod: s.recording_method as DailySale["recordingMethod"],
@@ -268,8 +268,8 @@ export default function Home() {
         .select("*")
         .order("transaction_date", { ascending: false });
       if (txErr) console.error("Supabase cash_transactions error:", txErr);
-      if (!txErr && txData) {
-        const parsed = txData.map((t: Record<string, unknown>) => ({
+      if (!txErr) {
+        const parsed = (txData ?? []).map((t: Record<string, unknown>) => ({
           id: String(t.id),
           transactionDate: String(t.transaction_date),
           cashAccountId: String(t.cash_account_id),
@@ -295,8 +295,8 @@ export default function Home() {
         .select("*")
         .order("purchase_date", { ascending: false });
       if (assetErr) console.error("Supabase fixed_assets error:", assetErr);
-      if (!assetErr && assetData) {
-        const parsed = assetData.map((a: Record<string, unknown>) => ({
+      if (!assetErr) {
+        const parsed = (assetData ?? []).map((a: Record<string, unknown>) => ({
           id: String(a.id),
           name: String(a.name),
           category: String(a.category),
@@ -317,8 +317,8 @@ export default function Home() {
         .select("*")
         .order("maintenance_date", { ascending: false });
       if (mntErr) console.error("Supabase asset_maintenance error:", mntErr);
-      if (!mntErr && mntData) {
-        const parsed = mntData.map((m: Record<string, unknown>) => ({
+      if (!mntErr) {
+        const parsed = (mntData ?? []).map((m: Record<string, unknown>) => ({
           id: String(m.id),
           assetId: String(m.asset_id),
           assetName: String(m.asset_name),
@@ -373,7 +373,7 @@ export default function Home() {
         })${safeSale.creditAmount > 0 ? ` [Potongan Rp ${safeSale.creditAmount}]` : ""}`,
         sourceType: "SALES",
         sourceId: safeSale.id,
-        createdBy: safeSale.createdBy,
+        createdBy: currentUser?.fullName || safeSale.createdBy,
         createdAt: new Date().toISOString(),
         status: "ACTIVE",
       };
@@ -382,6 +382,24 @@ export default function Home() {
         saveStorage(STORAGE_KEYS.TRANSACTIONS, next);
         return next;
       });
+
+      // Simpan auto cash transaction ke Supabase agar tidak hilang saat refresh
+      const supabaseTx = createClient();
+      if (supabaseTx) {
+        const { error: txErr } = await supabaseTx.from("cash_transactions").insert({
+          transaction_date: autoCashTx.transactionDate,
+          cash_account_id: autoCashTx.cashAccountId,
+          category_name: autoCashTx.categoryName,
+          direction: autoCashTx.direction,
+          amount: autoCashTx.amount,
+          description: autoCashTx.description,
+          source_type: autoCashTx.sourceType,
+          source_id: autoCashTx.sourceId,
+          created_by: autoCashTx.createdBy,
+          status: "ACTIVE",
+        });
+        if (txErr) console.error("Gagal simpan transaksi penjualan ke Supabase cash_transactions:", txErr);
+      }
     }
 
     const supabase = createClient();
