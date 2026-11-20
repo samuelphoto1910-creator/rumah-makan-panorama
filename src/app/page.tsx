@@ -229,8 +229,9 @@ export default function Home() {
         .select("*, daily_sale_items(*)")
         .order("business_date", { ascending: false });
       if (salesErr) console.error("Supabase daily_sales error:", salesErr);
+      let parsedSales: DailySale[] = [];
       if (!salesErr) {
-        const parsed = (salesData ?? []).map((s: Record<string, unknown>) => ({
+        parsedSales = (salesData ?? []).map((s: Record<string, unknown>) => ({
           id: String(s.id),
           businessDate: String(s.business_date),
           recordingMethod: s.recording_method as DailySale["recordingMethod"],
@@ -258,8 +259,8 @@ export default function Home() {
               }))
             : undefined,
         }));
-        setSales(parsed);
-        saveStorage(STORAGE_KEYS.SALES, parsed);
+        setSales(parsedSales);
+        saveStorage(STORAGE_KEYS.SALES, parsedSales);
       }
 
       // 4. Cash Transactions
@@ -269,7 +270,7 @@ export default function Home() {
         .order("transaction_date", { ascending: false });
       if (txErr) console.error("Supabase cash_transactions error:", txErr);
       if (!txErr) {
-        const parsed = (txData ?? []).map((t: Record<string, unknown>) => ({
+        const parsedTx: CashTransaction[] = (txData ?? []).map((t: Record<string, unknown>) => ({
           id: String(t.id),
           transactionDate: String(t.transaction_date),
           cashAccountId: String(t.cash_account_id),
@@ -285,8 +286,57 @@ export default function Home() {
           status: t.status as CashTransaction["status"],
           cancelReason: t.cancel_reason ? String(t.cancel_reason) : undefined,
         }));
-        setTransactions(parsed);
-        saveStorage(STORAGE_KEYS.TRANSACTIONS, parsed);
+
+        // Sinkronisasi otomatis: pastikan setiap penjualan aktif memiliki catatan uang masuk di Buku Kas
+        for (const sale of parsedSales) {
+          if (sale.status === "ACTIVE" && !sale.isComparisonOnly) {
+            const hasTx = parsedTx.some(
+              (t) =>
+                t.sourceId === sale.id ||
+                (t.sourceType === "SALES" && t.transactionDate === sale.businessDate && t.amount === sale.netAmount)
+            );
+            if (!hasTx) {
+              const autoTx: CashTransaction = {
+                id: `tx-sale-${sale.id}`,
+                transactionDate: sale.businessDate,
+                cashAccountId: sale.cashAccountId,
+                categoryId: "cat-sale",
+                categoryName: "Hasil Penjualan Resto",
+                direction: "IN",
+                amount: sale.netAmount,
+                description: `Omzet penjualan ${sale.businessDate} (${
+                  sale.recordingMethod === "PER_MENU" ? "Per Menu" : "Total Langsung"
+                })`,
+                sourceType: "SALES",
+                sourceId: sale.id,
+                createdBy: sale.createdBy,
+                createdAt: sale.createdAt || new Date().toISOString(),
+                status: "ACTIVE",
+              };
+              parsedTx.push(autoTx);
+              // Simpan ke Supabase jika belum ada
+              supabase
+                .from("cash_transactions")
+                .insert({
+                  transaction_date: autoTx.transactionDate,
+                  cash_account_id: autoTx.cashAccountId,
+                  category_name: autoTx.categoryName,
+                  direction: autoTx.direction,
+                  amount: autoTx.amount,
+                  description: autoTx.description,
+                  source_type: autoTx.sourceType,
+                  source_id: autoTx.sourceId,
+                  created_by: autoTx.createdBy,
+                  status: "ACTIVE",
+                })
+                .then();
+            }
+          }
+        }
+
+        parsedTx.sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
+        setTransactions(parsedTx);
+        saveStorage(STORAGE_KEYS.TRANSACTIONS, parsedTx);
       }
 
       // 5. Fixed Assets
@@ -353,40 +403,72 @@ export default function Home() {
   // Handlers for Penjualan (Sales) with Debit & Kredit
   const handleAddSale = async (newSale: DailySale) => {
     const safeSale = { ...newSale, cashAccountId: sanitizeCashAccountId(newSale.cashAccountId) };
-    const updatedSales = [safeSale, ...sales];
+
+    const supabase = createClient();
+    let realSaleId = safeSale.id;
+
+    // Simpan ke daily_sales di Supabase terlebih dahulu agar mendapatkan UUID resmi
+    if (supabase) {
+      const { data: insertedSale, error: saleErr } = await supabase
+        .from("daily_sales")
+        .insert({
+          business_date: safeSale.businessDate,
+          recording_method: safeSale.recordingMethod,
+          record_type: safeSale.recordType,
+          cash_account_id: safeSale.cashAccountId,
+          debit_amount: safeSale.debitAmount,
+          credit_amount: safeSale.creditAmount,
+          net_amount: safeSale.netAmount,
+          reported_total: safeSale.reportedTotal,
+          notes: safeSale.notes,
+          created_by: currentUser?.fullName || safeSale.createdBy,
+          status: safeSale.status,
+        })
+        .select()
+        .single();
+
+      if (saleErr) {
+        console.error("Gagal menyimpan ke Supabase daily_sales:", saleErr);
+      } else if (insertedSale) {
+        realSaleId = String(insertedSale.id);
+      }
+    }
+
+    const finalSale: DailySale = { ...safeSale, id: realSaleId };
+    const updatedSales = [finalSale, ...sales];
     setSales(updatedSales);
     saveStorage(STORAGE_KEYS.SALES, updatedSales);
 
     // Jika BUKAN pembanding, otomatis buat mutasi kas masuk (Debit Kas)
-    if (!safeSale.isComparisonOnly) {
-      const targetAccount = cashAccounts.find((a) => a.id === safeSale.cashAccountId);
+    if (!finalSale.isComparisonOnly) {
+      const targetAccount = cashAccounts.find((a) => a.id === finalSale.cashAccountId);
       const autoCashTx: CashTransaction = {
-        id: `tx-sale-${safeSale.id}`,
-        transactionDate: safeSale.businessDate,
-        cashAccountId: safeSale.cashAccountId,
+        id: `tx-sale-${realSaleId}`,
+        transactionDate: finalSale.businessDate,
+        cashAccountId: finalSale.cashAccountId,
         categoryId: "cat-sale",
         categoryName: "Hasil Penjualan Resto",
         direction: "IN",
-        amount: safeSale.netAmount,
-        description: `Omzet penjualan ${safeSale.businessDate} ke ${targetAccount?.name || "Kas"} (${
-          safeSale.recordingMethod === "PER_MENU" ? "Per Menu" : "Total Langsung"
-        })${safeSale.creditAmount > 0 ? ` [Potongan Rp ${safeSale.creditAmount}]` : ""}`,
+        amount: finalSale.netAmount,
+        description: `Omzet penjualan ${finalSale.businessDate} ke ${targetAccount?.name || "Kas"} (${
+          finalSale.recordingMethod === "PER_MENU" ? "Per Menu" : "Total Langsung"
+        })${finalSale.creditAmount > 0 ? ` [Potongan Rp ${finalSale.creditAmount}]` : ""}`,
         sourceType: "SALES",
-        sourceId: safeSale.id,
-        createdBy: currentUser?.fullName || safeSale.createdBy,
+        sourceId: realSaleId,
+        createdBy: currentUser?.fullName || finalSale.createdBy,
         createdAt: new Date().toISOString(),
         status: "ACTIVE",
       };
+
       setTransactions((prev) => {
         const next = [autoCashTx, ...prev];
         saveStorage(STORAGE_KEYS.TRANSACTIONS, next);
         return next;
       });
 
-      // Simpan auto cash transaction ke Supabase agar tidak hilang saat refresh
-      const supabaseTx = createClient();
-      if (supabaseTx) {
-        const { error: txErr } = await supabaseTx.from("cash_transactions").insert({
+      // Simpan auto cash transaction ke Supabase agar tersimpan permanen di Buku Kas
+      if (supabase) {
+        const { error: txErr } = await supabase.from("cash_transactions").insert({
           transaction_date: autoCashTx.transactionDate,
           cash_account_id: autoCashTx.cashAccountId,
           category_name: autoCashTx.categoryName,
@@ -401,24 +483,6 @@ export default function Home() {
         if (txErr) console.error("Gagal simpan transaksi penjualan ke Supabase cash_transactions:", txErr);
       }
     }
-
-    const supabase = createClient();
-    if (supabase) {
-      const { error } = await supabase.from("daily_sales").insert({
-        business_date: safeSale.businessDate,
-        recording_method: safeSale.recordingMethod,
-        record_type: safeSale.recordType,
-        cash_account_id: safeSale.cashAccountId,
-        debit_amount: safeSale.debitAmount,
-        credit_amount: safeSale.creditAmount,
-        net_amount: safeSale.netAmount,
-        reported_total: safeSale.reportedTotal,
-        notes: safeSale.notes,
-        created_by: currentUser?.fullName || safeSale.createdBy,
-        status: safeSale.status,
-      });
-      if (error) console.error("Gagal menyimpan ke Supabase daily_sales:", error);
-    }
   };
 
   const handleCancelSale = async (saleId: string, reason: string) => {
@@ -429,7 +493,7 @@ export default function Home() {
     saveStorage(STORAGE_KEYS.SALES, updatedSales);
 
     const updatedTx = transactions.map((t) =>
-      t.sourceId === saleId
+      t.sourceId === saleId || t.id === `tx-sale-${saleId}`
         ? { ...t, status: "CANCELLED" as const, cancelReason: `Penjualan #${saleId} dibatalkan: ${reason}` }
         : t
     );
@@ -442,7 +506,38 @@ export default function Home() {
         .from("daily_sales")
         .update({ status: "CANCELLED", cancel_reason: reason })
         .eq("id", saleId);
-      if (error) console.error("Gagal membatalkan di Supabase:", error);
+      if (error) console.error("Gagal membatalkan di Supabase daily_sales:", error);
+
+      const { error: txErr } = await supabase
+        .from("cash_transactions")
+        .update({ status: "CANCELLED", cancel_reason: `Penjualan dibatalkan: ${reason}` })
+        .eq("source_id", saleId);
+      if (txErr) console.error("Gagal membatalkan di Supabase cash_transactions:", txErr);
+    }
+  };
+
+  const handleDeleteSale = async (saleId: string) => {
+    // 1. Hapus dari state penjualan dan localStorage
+    const updatedSales = sales.filter((s) => s.id !== saleId);
+    setSales(updatedSales);
+    saveStorage(STORAGE_KEYS.SALES, updatedSales);
+
+    // 2. Hapus transaksi kas terkait dari state transaksi dan localStorage
+    const updatedTx = transactions.filter(
+      (t) => t.sourceId !== saleId && t.id !== `tx-sale-${saleId}`
+    );
+    setTransactions(updatedTx);
+    saveStorage(STORAGE_KEYS.TRANSACTIONS, updatedTx);
+
+    // 3. Hapus permanen dari Supabase
+    const supabase = createClient();
+    if (supabase) {
+      await supabase.from("daily_sale_items").delete().eq("daily_sale_id", saleId);
+      const { error: saleErr } = await supabase.from("daily_sales").delete().eq("id", saleId);
+      if (saleErr) console.error("Gagal menghapus daily_sales di Supabase:", saleErr);
+
+      const { error: txErr } = await supabase.from("cash_transactions").delete().eq("source_id", saleId);
+      if (txErr) console.error("Gagal menghapus cash_transactions di Supabase:", txErr);
     }
   };
 
@@ -493,9 +588,24 @@ export default function Home() {
   };
 
   const handleDeleteTransaction = async (txId: string) => {
+    const txToDelete = transactions.find((t) => t.id === txId);
     const updatedTx = transactions.filter((t) => t.id !== txId);
     setTransactions(updatedTx);
     saveStorage(STORAGE_KEYS.TRANSACTIONS, updatedTx);
+
+    // Jika transaksi ini berasal dari penjualan, bersihkan juga rekaman penjualannya
+    if (txToDelete?.sourceType === "SALES" && txToDelete.sourceId) {
+      const saleId = txToDelete.sourceId;
+      const updatedSales = sales.filter((s) => s.id !== saleId);
+      setSales(updatedSales);
+      saveStorage(STORAGE_KEYS.SALES, updatedSales);
+
+      const supabase = createClient();
+      if (supabase) {
+        await supabase.from("daily_sale_items").delete().eq("daily_sale_id", saleId);
+        await supabase.from("daily_sales").delete().eq("id", saleId);
+      }
+    }
 
     const supabase = createClient();
     if (supabase) {
@@ -737,6 +847,7 @@ export default function Home() {
               menus={menus}
               onAddSale={handleAddSale}
               onCancelSale={handleCancelSale}
+              onDeleteSale={handleDeleteSale}
               userRole={userRole}
             />
           )}

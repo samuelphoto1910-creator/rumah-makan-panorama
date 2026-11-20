@@ -77,6 +77,7 @@ export function CashFlowView({
   ];
 
   const incomeCategories = [
+    "Hasil Penjualan Resto",
     "Pendapatan Lain-Lain",
     "Sponsorship / Promosi",
     "Bagi Hasil Kemitraan",
@@ -158,7 +159,7 @@ export function CashFlowView({
 
   const filteredTransactions = transactions.filter((t) => {
     const isDirectionMatch = isIncome
-      ? t.direction === "IN" && t.sourceType !== "SALES"
+      ? t.direction === "IN"
       : t.direction === "OUT";
     if (!isDirectionMatch) return false;
     if (filterCategory !== "ALL" && t.categoryName !== filterCategory) return false;

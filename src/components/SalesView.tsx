@@ -8,6 +8,7 @@ interface SalesViewProps {
   menus: MenuItem[];
   onAddSale: (sale: DailySale) => void;
   onCancelSale: (saleId: string, reason: string) => void;
+  onDeleteSale: (saleId: string) => void;
   userRole: "Owner" | "Admin" | "Staff";
 }
 
@@ -16,6 +17,7 @@ export function SalesView({
   menus,
   onAddSale,
   onCancelSale,
+  onDeleteSale,
   userRole,
 }: SalesViewProps) {
   // Mode toggle: Recording Form vs History List
@@ -34,10 +36,11 @@ export function SalesView({
     { menuId: menus[0]?.id || "", quantity: 10 },
   ]);
 
-  // Selected Sale for Detail Modal & Cancel Modal
+  // Selected Sale for Detail Modal, Cancel Modal, and Delete Modal
   const [selectedDetailSale, setSelectedDetailSale] = useState<DailySale | null>(null);
   const [cancelModalSaleId, setCancelModalSaleId] = useState<string | null>(null);
   const [cancelReasonInput, setCancelReasonInput] = useState("");
+  const [deleteModalSale, setDeleteModalSale] = useState<DailySale | null>(null);
 
   // Filter state for history
   const [filterMethod, setFilterMethod] = useState<string>("ALL");
@@ -599,9 +602,20 @@ export function SalesView({
                           <button
                             type="button"
                             onClick={() => setCancelModalSaleId(sale.id)}
-                            className="px-2.5 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-[11px]"
+                            className="px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-700 font-semibold text-[11px]"
+                            title="Batalkan Penjualan (Audit Trail)"
                           >
                             Batalkan
+                          </button>
+                        )}
+                        {(userRole === "Owner" || userRole === "Admin") && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteModalSale(sale)}
+                            className="px-2.5 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-[11px]"
+                            title="Hapus Permanen Catatan & Uang Masuk"
+                          >
+                            Hapus
                           </button>
                         )}
                       </td>
@@ -753,6 +767,51 @@ export function SalesView({
                 className="px-4 py-1.5 rounded-lg bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700"
               >
                 Konfirmasi Batalkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Modal */}
+      {deleteModalSale && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5 space-y-3">
+            <h4 className="font-bold text-rose-800 text-sm flex items-center gap-2">
+              <IconTrash className="w-4 h-4 text-rose-600" />
+              <span>Hapus Permanen Data Penjualan</span>
+            </h4>
+            <p className="text-xs text-slate-600">
+              Apakah Anda yakin ingin menghapus catatan penjualan tanggal{" "}
+              <strong>{deleteModalSale.businessDate}</strong> dengan nominal{" "}
+              <strong>{formatIDR(deleteModalSale.netAmount || deleteModalSale.reportedTotal)}</strong>{" "}
+              secara permanen?
+            </p>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-800 space-y-1">
+              <p className="font-semibold">Perhatian:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>Catatan ini akan dihapus sepenuhnya dari sistem dan database.</li>
+                <li>Mutasi uang masuk terkait di Buku Kas akan otomatis terhapus.</li>
+                <li>Tindakan ini tidak dapat dibatalkan.</li>
+              </ul>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteModalSale(null)}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-xs"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteSale(deleteModalSale.id);
+                  setDeleteModalSale(null);
+                }}
+                className="px-4 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-semibold text-xs transition-colors"
+              >
+                Ya, Hapus Permanen
               </button>
             </div>
           </div>
