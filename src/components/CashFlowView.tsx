@@ -29,7 +29,7 @@ export function CashFlowView({
   const [transactionDate, setTransactionDate] = useState("");
   const [accountId, setAccountId] = useState(cashAccounts[0]?.id || "");
   const [categoryName, setCategoryName] = useState(
-    isIncome ? "Hasil Penjualan Resto" : "Bahan Baku & Belanja Harian"
+    isIncome ? "Pendapatan Lain-Lain" : "Bahan Baku & Belanja Harian"
   );
   const [amount, setAmount] = useState<number | "">("");
   const [description, setDescription] = useState("");
@@ -82,7 +82,6 @@ export function CashFlowView({
   ];
 
   const incomeCategories = [
-    "Hasil Penjualan Resto",
     "Pendapatan Lain-Lain",
     "Sponsorship / Promosi",
     "Bagi Hasil Kemitraan",
@@ -164,7 +163,7 @@ export function CashFlowView({
 
   const filteredTransactions = transactions.filter((t) => {
     const isDirectionMatch = isIncome
-      ? t.direction === "IN"
+      ? t.direction === "IN" && t.sourceType !== "SALES"
       : t.direction === "OUT";
     if (!isDirectionMatch) return false;
     if (filterCategory !== "ALL" && t.categoryName !== filterCategory) return false;
