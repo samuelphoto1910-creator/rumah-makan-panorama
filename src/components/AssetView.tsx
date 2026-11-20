@@ -34,7 +34,7 @@ export function AssetView({
   const [vendor, setVendor] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [category, setCategory] = useState("Peralatan Dapur");
-  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [purchaseDate, setPurchaseDate] = useState("");
   const [purchasePrice, setPurchasePrice] = useState<number | "">("");
   const [condition, setCondition] = useState<FixedAsset["condition"]>("Baik");
   const [location, setLocation] = useState("Dapur Utama");
@@ -49,11 +49,21 @@ export function AssetView({
   // Modal State: Servis / Perawatan Aset
   const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState(assets[0]?.id || "");
-  const [maintenanceDate, setMaintenanceDate] = useState(new Date().toISOString().split("T")[0]);
+  const [maintenanceDate, setMaintenanceDate] = useState("");
   const [maintenanceType, setMaintenanceType] = useState("Servis Berkala");
   const [maintenanceDesc, setMaintenanceDesc] = useState("");
   const [maintenanceCost, setMaintenanceCost] = useState<number | "">("");
   const [maintenanceNotes, setMaintenanceNotes] = useState("");
+
+  // Client-side date initialization to prevent prerender errors
+  useEffect(() => {
+    if (!purchaseDate) {
+      setPurchaseDate(new Date().toISOString().split("T")[0]);
+    }
+    if (!maintenanceDate) {
+      setMaintenanceDate(new Date().toISOString().split("T")[0]);
+    }
+  }, [purchaseDate, maintenanceDate]);
 
   // Sync cash accounts and assets if loaded asynchronously
   useEffect(() => {

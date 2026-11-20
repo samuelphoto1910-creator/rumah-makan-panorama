@@ -98,12 +98,18 @@ export default function Home() {
     loadStorage(STORAGE_KEYS.MAINTENANCES, initialAssetMaintenance)
   );
 
-  const currentDateStr = new Date().toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Asia/Jakarta",
-  }) + " (WIB)";
+  const [currentDateStr, setCurrentDateStr] = useState<string>("");
+
+  useEffect(() => {
+    setCurrentDateStr(
+      new Date().toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Jakarta",
+      }) + " (WIB)"
+    );
+  }, []);
 
   // Check login status on page mount (Strict Supabase Auth - No Demo)
   useEffect(() => {

@@ -26,15 +26,20 @@ export function CashFlowView({
 
   // Form State for Adding
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
-  const [transactionDate, setTransactionDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const [transactionDate, setTransactionDate] = useState("");
   const [accountId, setAccountId] = useState(cashAccounts[0]?.id || "");
   const [categoryName, setCategoryName] = useState(
-    isIncome ? "Pendapatan Lain-Lain" : "Bahan Baku & Belanja Harian"
+    isIncome ? "Hasil Penjualan Resto" : "Bahan Baku & Belanja Harian"
   );
   const [amount, setAmount] = useState<number | "">("");
   const [description, setDescription] = useState("");
+
+  // Initialize date in client effect to prevent prerender evaluation
+  React.useEffect(() => {
+    if (!transactionDate) {
+      setTransactionDate(new Date().toISOString().split("T")[0]);
+    }
+  }, [transactionDate]);
 
   // Auto-sync accountId if cashAccounts loads asynchronously
   React.useEffect(() => {
